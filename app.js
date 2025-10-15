@@ -1,4 +1,5 @@
-// app.js (module)
+// app.js — versi fix + offline autosync
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
 import {
   getDatabase,
@@ -9,18 +10,17 @@ import {
   update,
   remove,
   get,
-  child
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
 /* =========================
-   Firebase config (you provided)
+   🔧 Firebase config — FIXED
    ========================= */
 const firebaseConfig = {
   apiKey: "AIzaSyDtuhghR2rpV360CGDBrQ0XXFvgHa7t7zg",
   authDomain: "wishlist-71fb9.firebaseapp.com",
   databaseURL: "https://wishlist-71fb9-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "wishlist-71fb9",
-  storageBucket: "wishlist-71fb9.firebasestorage.app",
+  storageBucket: "wishlist-71fb9.appspot.com", // ✅ fixed domain
   messagingSenderId: "361109086271",
   appId: "1:361109086271:web:1da0caff0d52ec7f97988a"
 };
@@ -28,73 +28,28 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-const appVersion = "0.4.0"; // bump when updating cloud schema / behavior
+const appVersion = "0.5.0-offline";
 
-// ===============================
-// Default data (same as previous local defaults)
+/* =========================
+   Default data
+   ========================= */
 const defaultMakan = [
-  "Bakmi Ry (Concat)",
-  "Sarangeui Oppa (Concat)",
-  "Ayam Rempah Teh Sari (Amikom)",
-  "Bakso Malang Cakmin (Embung Potorono)",
-  "Doyan Es Teler (Seturan)",
-  "Sate Kulit Jumbo Boemisae (Jakal)",
-  "Ayam Presku (mana mana ad katanya 😆)",
-  "Bebek Mbah Mangoen",
-  "Geprek Mantul",
-  "Lesehan Sumilir 2",
-  "Baso Goreng GG",
-  "Pempek Cik Ana",
-  "Soto Cak Kadir (Krapyak)",
-  "Wedang Tahu Bu Sukardi (Kranggan, Mirota)",
-  "Mie Sohib",
-  "Seafood Hunter",
-  "Sego Yojo",
-  "Sate Petir Pak Nano",
-  "Kalbano Caffe & Eatery",
-  "Tahu Gimbal Dilla",
-  "Rizbakery & Coffee",
-  "Pecel Lele Mbak Wiwi",
-  "Katsu Panas Malam (Demangan)",
-  "Bubur Hayam Bhinneka",
-  "Mie Nyemek Bu Tri (Jakal)",
-  "Warung Nasi Jinggo (Pogung)",
-  "Kopi Dari Hati (Kaliurang)",
-  "Warung Lesehan Prambanan",
-  "Bakso & Mie Ayam Cak Man",
-  "Sate Taichan Goreng",
-  "Es Buah Segar Kridosono"
+  "Bakmi Ry (Concat)", "Sarangeui Oppa (Concat)", "Ayam Rempah Teh Sari (Amikom)",
+  "Bakso Malang Cakmin (Embung Potorono)", "Doyan Es Teler (Seturan)", "Sate Kulit Jumbo Boemisae (Jakal)"
 ];
-
 const defaultWisata = [
-  "Potrobayan Camp (Bantul)",
-  "Titik Nol Selokan Mataram (Mgl)",
-  "Waterboom Jogja (Maguwo)",
-  "Jembatan Pandansimo (Bantul)",
-  "Gunung Andong (Mgl)",
-  "Hutan Pinus Pengger",
-  "HeHa Sky View",
-  "Pantai Indrayanti",
-  "Kalibiru Kulon Progo",
-  "Tebing Breksi",
-  "Candi Prambanan",
-  "Kampung Wisata Taman Sari",
-  "Bukit Bintang Patuk",
-  "Goa Pindul (Gunungkidul)",
-  "Bukit Paralayang Watugupit",
-  "Kebun Teh Nglinggo",
-  "Pantai Parangtritis",
-  "Teras Kaca Nguluran",
-  "Pinus Asri Imogiri",
-  "Malioboro Night Walk"
+  "Potrobayan Camp (Bantul)", "Waterboom Jogja (Maguwo)", "Gunung Andong (Mgl)",
+  "Hutan Pinus Pengger", "HeHa Sky View", "Pantai Indrayanti"
 ];
 
-// DB references
+// DB refs
 const rootRef = ref(db, "wishlist");
 const makanRef = ref(db, "wishlist/makan");
 const wisataRef = ref(db, "wishlist/wisata");
 
-// Utils DOM
+/* =========================
+   Confetti effect
+   ========================= */
 const confettiContainer = document.getElementById("confetti-container");
 function fireConfetti(n = 18) {
   for (let i = 0; i < n; i++) {
@@ -122,27 +77,54 @@ function fireConfetti(n = 18) {
   }
 }
 
-// Simple local helpers for migration & offline cache
-function localExtrasKey(tab) { return `${tab}-extra`; }
-function localCheckedKey(id) { return `checked-${id}`; }
-function saveLocalCache(tab, itemsObj) {
-  // itemsObj: { key: { name, checked } }
-  localStorage.setItem(`cache-${tab}`, JSON.stringify(itemsObj));
+/* =========================
+   Local cache + offline queue
+   ========================= */
+function saveLocalCache(tab, data) {
+  localStorage.setItem(`cache-${tab}`, JSON.stringify(data));
 }
 function loadLocalCache(tab) {
-  try { return JSON.parse(localStorage.getItem(`cache-${tab}`) || "{}"); }
-  catch(e){ return {}; }
+  try {
+    return JSON.parse(localStorage.getItem(`cache-${tab}`) || "{}");
+  } catch {
+    return {};
+  }
 }
 
-// Render functions
+// Queue untuk item yang ditambahkan saat offline
+function addToOfflineQueue(tab, name) {
+  const queue = JSON.parse(localStorage.getItem("offline-queue") || "[]");
+  queue.push({ tab, name, created: Date.now() });
+  localStorage.setItem("offline-queue", JSON.stringify(queue));
+  console.warn("💾 Disimpan offline:", name);
+}
+async function processOfflineQueue() {
+  const queue = JSON.parse(localStorage.getItem("offline-queue") || "[]");
+  if (!queue.length) return;
+  console.log("🔁 Syncing", queue.length, "item dari offline queue...");
+  for (const item of queue) {
+    await push(ref(db, `wishlist/${item.tab}`), {
+      name: item.name,
+      checked: false,
+      created: item.created
+    });
+  }
+  localStorage.removeItem("offline-queue");
+  console.log("✅ Semua item offline berhasil di-sync!");
+}
+
+/* =========================
+   UI render
+   ========================= */
 function renderList(containerId, itemsObj, filter = "") {
   const section = document.getElementById(containerId);
   section.innerHTML = "";
   const keys = Object.keys(itemsObj || {});
   const normalizedFilter = filter.trim().toLowerCase();
+
   keys.forEach((k) => {
     const item = itemsObj[k];
-    if (!item || !item.name) return;
+    if (!item?.name) return;
     if (normalizedFilter && !item.name.toLowerCase().includes(normalizedFilter)) return;
 
     const div = document.createElement("div");
@@ -151,88 +133,89 @@ function renderList(containerId, itemsObj, filter = "") {
     div.innerHTML = `
       <input type="checkbox" id="${containerId}-${k}" ${item.checked ? "checked" : ""}>
       <label for="${containerId}-${k}">${item.name}</label>
-      <button class="delete-btn" title="Hapus">&times;</button>
+      <button class="delete-btn">&times;</button>
     `;
     section.appendChild(div);
 
-    // checkbox change -> update DB
     div.querySelector("input").addEventListener("change", (e) => {
       const checked = e.target.checked;
-      update(ref(db, `wishlist/${containerId}/${k}`), { checked: !!checked })
-        .catch((err)=> console.error("update checked err", err));
+      update(ref(db, `wishlist/${containerId}/${k}`), { checked }).catch(console.error);
       if (checked) fireConfetti(14);
     });
 
-    // delete button
     div.querySelector(".delete-btn").addEventListener("click", () => {
-      remove(ref(db, `wishlist/${containerId}/${k}`))
-        .catch((err)=> console.error("remove err", err));
+      remove(ref(db, `wishlist/${containerId}/${k}`)).catch(console.error);
     });
   });
-
   updateProgress(containerId);
 }
 
-// Progress update
 function updateProgress(tabId) {
   const section = document.getElementById(tabId);
   const items = Array.from(section.querySelectorAll(".item"));
+  const done = items.filter(it => it.querySelector("input").checked).length;
   const total = items.length;
-  const done = items.filter((it) => it.querySelector("input").checked).length;
-  const text = document.getElementById("progress-text");
-  const fill = document.getElementById("progress-fill");
-  if (text) text.textContent = `${done} / ${total}`;
   const pct = total ? Math.round((done / total) * 100) : 0;
-  if (fill) fill.style.width = pct + "%";
+  document.getElementById("progress-text").textContent = `${done} / ${total}`;
+  document.getElementById("progress-fill").style.width = pct + "%";
 }
 
-// UI: Tabs, search, add buttons
+/* =========================
+   Tabs & search
+   ========================= */
 let currentTab = "makan";
 document.querySelectorAll(".tab-button").forEach((btn) => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-button").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".tab-button").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
-    document.querySelectorAll(".tab-content").forEach((c) => c.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
     document.getElementById(btn.dataset.tab).classList.add("active");
-    currentTab = btn.dataset.tab;
-    document.querySelectorAll(".input-area").forEach((area) => {
-      area.style.display = area.dataset.tab === currentTab ? "flex" : "none";
+    document.querySelectorAll(".input-area").forEach((a) => {
+      a.style.display = a.dataset.tab === btn.dataset.tab ? "flex" : "none";
     });
+    currentTab = btn.dataset.tab;
     updateProgress(currentTab);
   });
 });
 
-const searchInput = document.getElementById("search-input");
-searchInput.addEventListener("input", (e) => {
+document.getElementById("search-input").addEventListener("input", (e) => {
   const q = e.target.value || "";
-  // re-render from cache (we keep latest DB snapshot in cache-*)
-  const cache = loadLocalCache(currentTab);
-  renderList(currentTab, cache, q);
+  renderList(currentTab, loadLocalCache(currentTab), q);
 });
 
-// Add item push to DB
-async function addNewItemToDb(tab, name) {
-  if (!name || !name.trim()) return;
-  const targetRef = tab === "makan" ? makanRef : wisataRef;
-  // push object { name, checked:false, created:timestamp }
-  await push(targetRef, { name: name.trim(), checked: false, created: Date.now() });
+/* =========================
+   Add new item (online/offline)
+   ========================= */
+async function addNewItem(tab, name) {
+  if (!name.trim()) return;
+  if (navigator.onLine) {
+    await push(ref(db, `wishlist/${tab}`), { name, checked: false, created: Date.now() });
+  } else {
+    addToOfflineQueue(tab, name);
+    const cache = loadLocalCache(tab);
+    const tempKey = "temp-" + Date.now();
+    cache[tempKey] = { name, checked: false };
+    saveLocalCache(tab, cache);
+    renderList(tab, cache);
+  }
 }
 
-// Add button listeners
 document.getElementById("add-makan").addEventListener("click", async () => {
   const v = document.getElementById("input-makan").value.trim();
   if (!v) return;
   document.getElementById("input-makan").value = "";
-  addNewItemToDb("makan", v);
+  addNewItem("makan", v);
 });
 document.getElementById("add-wisata").addEventListener("click", async () => {
   const v = document.getElementById("input-wisata").value.trim();
   if (!v) return;
   document.getElementById("input-wisata").value = "";
-  addNewItemToDb("wisata", v);
+  addNewItem("wisata", v);
 });
 
-// Theme toggle (persist)
+/* =========================
+   Theme toggle
+   ========================= */
 const themeToggle = document.getElementById("theme-toggle");
 function applyTheme(mode) {
   if (mode === "dark") document.body.classList.add("dark");
@@ -240,86 +223,59 @@ function applyTheme(mode) {
   localStorage.setItem("theme", mode);
   themeToggle.textContent = mode === "dark" ? "☀️" : "🌙";
 }
-const savedTheme = localStorage.getItem("theme") || "light";
-applyTheme(savedTheme);
+applyTheme(localStorage.getItem("theme") || "light");
 themeToggle.addEventListener("click", () => {
   const next = document.body.classList.contains("dark") ? "light" : "dark";
   applyTheme(next);
 });
 
-// ===============================
-// Realtime listeners: keep local cache + render on changes
-// ===============================
+/* =========================
+   Realtime listeners
+   ========================= */
 function snapshotToObj(snapshotVal) {
-  // DB may be { key1: {name,checked}, key2: ... } or null
   return snapshotVal || {};
 }
-
 onValue(makanRef, (snap) => {
   const data = snapshotToObj(snap.val());
-  // save to local cache and render (search uses cache)
   saveLocalCache("makan", data);
-  // if current tab filter active apply search
-  const q = document.getElementById("search-input").value || "";
-  renderList("makan", data, q);
+  renderList("makan", data, document.getElementById("search-input").value || "");
 });
 onValue(wisataRef, (snap) => {
   const data = snapshotToObj(snap.val());
   saveLocalCache("wisata", data);
-  const q = document.getElementById("search-input").value || "";
-  renderList("wisata", data, q);
+  renderList("wisata", data, document.getElementById("search-input").value || "");
 });
 
-// ===============================
-// First-time DB seeding & Local -> Cloud migration
-// - If DB empty, seed defaults.
-// - If localStorage had extras (from older local version), push them and preserve checked states.
-// ===============================
+/* =========================
+   Seed default jika kosong
+   ========================= */
 async function seedIfEmpty() {
   try {
     const rootSnap = await get(rootRef);
-    const val = rootSnap.exists() ? rootSnap.val() : null;
-    const makanVal = val && val.makan ? val.makan : null;
-    const wisataVal = val && val.wisata ? val.wisata : null;
-
-    if (!makanVal) {
-      // seed default makan
-      for (const name of defaultMakan) {
+    if (!rootSnap.exists()) {
+      console.log("🌱 Seeding default data...");
+      for (const name of defaultMakan)
         await push(makanRef, { name, checked: false, created: Date.now() });
-      }
-    }
-    if (!wisataVal) {
-      for (const name of defaultWisata) {
+      for (const name of defaultWisata)
         await push(wisataRef, { name, checked: false, created: Date.now() });
-      }
-    }
-
-    // migrate local extras -> cloud (only once)
-    const migratedKey = "cloudMigrated";
-    if (!localStorage.getItem(migratedKey)) {
-      // try read older local extras and checked flags
-      for (const tab of ["makan", "wisata"]) {
-        const extras = JSON.parse(localStorage.getItem(`${tab}-extra`) || "[]");
-        // push extras
-        for (const ex of extras) {
-          await push(ref(db, `wishlist/${tab}`), { name: ex, checked: false, created: Date.now() });
-        }
-        // also migrate individual checked flags saved under keys like "makan-0" earlier: best-effort - skip complex mapping
-      }
-      localStorage.setItem(migratedKey, "1");
     }
   } catch (err) {
     console.error("seedIfEmpty error", err);
   }
 }
+seedIfEmpty().catch(console.error);
 
-// run seeding & migration once on startup
-seedIfEmpty().catch((e)=>console.error(e));
+/* =========================
+   Offline/online sync
+   ========================= */
+window.addEventListener("online", () => {
+  document.getElementById("offline-message").style.display = "none";
+  processOfflineQueue(); // ✅ sync otomatis
+});
+window.addEventListener("offline", () => {
+  document.getElementById("offline-message").style.display = "block";
+});
 
-// expose some helpers for debugging (optional)
-window.__WISH_DBG = {
-  db, rootRef, makanRef, wisataRef
-};
-
-// done
-console.log("Wishlist Cloud client initialized (v" + appVersion + ")");
+// Run on start
+if (navigator.onLine) processOfflineQueue();
+console.log("✅ Wishlist Cloud (offline-ready) v" + appVersion);
