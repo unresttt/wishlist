@@ -1,11 +1,13 @@
-// app.js — versi stabil 0.5.1 (fix progress bar + offline sync + firebase fix)
+// app.js — v0.5.3 (final stable build)
+// ✅ Fix progress bar cross-tab bug
+// ✅ Fix label mismatch (wisata/makan)
+// ✅ Full Firebase sync + offline mode + theme toggle
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
 import {
   getDatabase,
   ref,
   push,
-  set,
   onValue,
   update,
   remove,
@@ -13,30 +15,32 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
 /* =========================
-   🔧 Firebase config — FIXED
+   🔧 Firebase Config
    ========================= */
 const firebaseConfig = {
   apiKey: "AIzaSyDtuhghR2rpV360CGDBrQ0XXFvgHa7t7zg",
   authDomain: "wishlist-71fb9.firebaseapp.com",
   databaseURL: "https://wishlist-71fb9-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "wishlist-71fb9",
-  storageBucket: "wishlist-71fb9.appspot.com", // ✅ fixed
+  storageBucket: "wishlist-71fb9.appspot.com",
   messagingSenderId: "361109086271",
   appId: "1:361109086271:web:1da0caff0d52ec7f97988a"
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-const appVersion = "0.5.1";
+const appVersion = "0.5.3";
 
 /* =========================
    Default Data
    ========================= */
 const defaultMakan = [
   "Bakmi Ry (Concat)", "Sarangeui Oppa (Concat)", "Ayam Rempah Teh Sari (Amikom)",
-  "Bakso Malang Cakmin (Embung Potorono)", "Doyan Es Teler (Seturan)", "Sate Kulit Jumbo Boemisae (Jakal)",
-  "Ayam Presku (mana mana ad katanya 😆)", "Bebek Mbah Mangoen", "Geprek Mantul", "Lesehan Sumilir 2"
+  "Bakso Malang Cakmin (Embung Potorono)", "Doyan Es Teler (Seturan)",
+  "Sate Kulit Jumbo Boemisae (Jakal)", "Ayam Presku (mana mana ad katanya 😆)",
+  "Bebek Mbah Mangoen", "Geprek Mantul", "Lesehan Sumilir 2"
 ];
+
 const defaultWisata = [
   "Potrobayan Camp (Bantul)", "Titik Nol Selokan Mataram (Mgl)", "Waterboom Jogja (Maguwo)",
   "Jembatan Pandansimo (Bantul)", "Gunung Andong (Mgl)", "Hutan Pinus Pengger",
@@ -48,34 +52,8 @@ const makanRef = ref(db, "wishlist/makan");
 const wisataRef = ref(db, "wishlist/wisata");
 
 /* =========================
-   Helpers & Effects
+   Utilities
    ========================= */
-const confettiContainer = document.getElementById("confetti-container");
-function fireConfetti(n = 16) {
-  for (let i = 0; i < n; i++) {
-    const el = document.createElement("div");
-    el.textContent = Math.random() > 0.5 ? "💗" : "💜";
-    el.style.position = "absolute";
-    el.style.left = Math.random() * 100 + "%";
-    el.style.top = "-20px";
-    el.style.fontSize = Math.random() * 1.2 + 0.8 + "rem";
-    confettiContainer.appendChild(el);
-    const duration = 2200 + Math.random() * 1500;
-    el.animate(
-      [
-        { transform: "translate(0,0)", opacity: 1 },
-        {
-          transform: `translate(${Math.random() * 120 - 60}px, ${
-            window.innerHeight + 80
-          }px) rotate(${Math.random() * 720 - 360}deg)`,
-          opacity: 0
-        }
-      ],
-      { duration, easing: "ease-in-out" }
-    ).onfinish = () => el.remove();
-  }
-}
-
 function saveLocalCache(tab, data) {
   localStorage.setItem(`cache-${tab}`, JSON.stringify(data));
 }
@@ -87,19 +65,15 @@ function loadLocalCache(tab) {
   }
 }
 
-/* =========================
-   Offline queue support
-   ========================= */
 function addToOfflineQueue(tab, name) {
   const queue = JSON.parse(localStorage.getItem("offline-queue") || "[]");
   queue.push({ tab, name, created: Date.now() });
   localStorage.setItem("offline-queue", JSON.stringify(queue));
-  console.warn("💾 Disimpan offline:", name);
 }
+
 async function processOfflineQueue() {
   const queue = JSON.parse(localStorage.getItem("offline-queue") || "[]");
   if (!queue.length) return;
-  console.log("🔁 Syncing", queue.length, "item dari offline queue...");
   for (const item of queue) {
     await push(ref(db, `wishlist/${item.tab}`), {
       name: item.name,
@@ -108,11 +82,11 @@ async function processOfflineQueue() {
     });
   }
   localStorage.removeItem("offline-queue");
-  console.log("✅ Semua item offline berhasil di-sync!");
+  console.log("✅ Offline data synced!");
 }
 
 /* =========================
-   Render & Progress
+   UI + Render
    ========================= */
 let currentTab = "makan";
 
@@ -139,42 +113,36 @@ function renderList(containerId, itemsObj, filter = "") {
 
     div.querySelector("input").addEventListener("change", (e) => {
       const checked = e.target.checked;
-      update(ref(db, `wishlist/${containerId}/${k}`), { checked }).catch(console.error);
-      if (checked) fireConfetti(12);
-      setTimeout(() => updateProgress(containerId), 150);
+      update(ref(db, `wishlist/${containerId}/${k}`), { checked });
     });
 
     div.querySelector(".delete-btn").addEventListener("click", () => {
-      remove(ref(db, `wishlist/${containerId}/${k}`)).catch(console.error);
+      remove(ref(db, `wishlist/${containerId}/${k}`));
     });
   });
-
-  updateProgress(containerId);
 }
 
-// ✅ Fix progress bar agar hanya update tab aktif
-function updateProgress(tabId) {
-  if (tabId !== currentTab) return;
-  const section = document.getElementById(tabId);
-  const items = Array.from(section.querySelectorAll(".item"));
-  const total = items.length;
-  const done = items.filter(it => it.querySelector("input").checked).length;
+// ✅ Update progress hanya untuk tab aktif
+function updateProgressFromData(tab, data) {
+  if (tab !== currentTab) return;
+
+  const total = Object.keys(data || {}).length;
+  const done = Object.values(data || {}).filter(v => v.checked).length;
 
   const text = document.getElementById("progress-text");
   const fill = document.getElementById("progress-fill");
   const context = document.getElementById("progress-context");
 
   if (context) {
-    context.textContent = currentTab === "makan" ? "🍜 Tempat Makan" : "🌄 Tempat Wisata";
+    context.textContent = tab === "makan" ? "🍜 Tempat Makan" : "🌄 Tempat Wisata";
   }
 
   if (text) text.textContent = `${done} / ${total}`;
-  const pct = total ? Math.round((done / total) * 100) : 0;
-  if (fill) fill.style.width = pct + "%";
+  if (fill) fill.style.width = total ? Math.round((done / total) * 100) + "%" : "0%";
 }
 
 /* =========================
-   UI Controls
+   Tabs, Search & Add
    ========================= */
 document.querySelectorAll(".tab-button").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -186,7 +154,10 @@ document.querySelectorAll(".tab-button").forEach((btn) => {
       a.style.display = a.dataset.tab === btn.dataset.tab ? "flex" : "none";
     });
     currentTab = btn.dataset.tab;
-    setTimeout(() => updateProgress(currentTab), 100);
+
+    // Update progress sesuai tab saat ini
+    const cached = loadLocalCache(currentTab);
+    updateProgressFromData(currentTab, cached);
   });
 });
 
@@ -223,7 +194,7 @@ document.getElementById("add-wisata").addEventListener("click", async () => {
 });
 
 /* =========================
-   Theme toggle
+   Theme Toggle
    ========================= */
 const themeToggle = document.getElementById("theme-toggle");
 function applyTheme(mode) {
@@ -239,47 +210,44 @@ themeToggle.addEventListener("click", () => {
 });
 
 /* =========================
-   Realtime sync
+   Realtime Sync
    ========================= */
 function snapshotToObj(val) {
   return val || {};
 }
 
+// ✅ Update progress hanya jika tab aktif
 onValue(makanRef, (snap) => {
   const data = snapshotToObj(snap.val());
   saveLocalCache("makan", data);
-  const q = document.getElementById("search-input").value || "";
-  renderList("makan", data, q);
+  renderList("makan", data, document.getElementById("search-input").value || "");
+  if (currentTab === "makan") updateProgressFromData("makan", data);
 });
 
 onValue(wisataRef, (snap) => {
   const data = snapshotToObj(snap.val());
   saveLocalCache("wisata", data);
-  const q = document.getElementById("search-input").value || "";
-  renderList("wisata", data, q);
+  renderList("wisata", data, document.getElementById("search-input").value || "");
+  if (currentTab === "wisata") updateProgressFromData("wisata", data);
 });
 
 /* =========================
-   Seed data jika kosong
+   Seed Default Data
    ========================= */
 async function seedIfEmpty() {
-  try {
-    const rootSnap = await get(rootRef);
-    if (!rootSnap.exists()) {
-      console.log("🌱 Seeding default data...");
-      for (const name of defaultMakan)
-        await push(makanRef, { name, checked: false, created: Date.now() });
-      for (const name of defaultWisata)
-        await push(wisataRef, { name, checked: false, created: Date.now() });
-    }
-  } catch (err) {
-    console.error("seedIfEmpty error", err);
+  const rootSnap = await get(rootRef);
+  if (!rootSnap.exists()) {
+    console.log("🌱 Seeding default data...");
+    for (const name of defaultMakan)
+      await push(makanRef, { name, checked: false, created: Date.now() });
+    for (const name of defaultWisata)
+      await push(wisataRef, { name, checked: false, created: Date.now() });
   }
 }
 seedIfEmpty();
 
 /* =========================
-   Offline handlers
+   Offline Handling
    ========================= */
 window.addEventListener("online", () => {
   document.getElementById("offline-message").style.display = "none";
@@ -288,11 +256,10 @@ window.addEventListener("online", () => {
 window.addEventListener("offline", () => {
   document.getElementById("offline-message").style.display = "block";
 });
-
 if (navigator.onLine) processOfflineQueue();
 
 /* =========================
-   Tambahan konteks di progress bar
+   Progress Label Context
    ========================= */
 const progressWrap = document.querySelector(".progress-wrap");
 if (progressWrap) {
@@ -305,6 +272,6 @@ if (progressWrap) {
 }
 
 /* =========================
-   Init done
+   Done
    ========================= */
-console.log("✅ Wishlist Cloud v" + appVersion + " (progress fix)");
+console.log("✅ Couple Wishlist Kita v" + appVersion + " loaded");
