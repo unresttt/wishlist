@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>💖 Couple Wishlist Kita (Cloud) 💖</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#9ecb90" />
+  <link rel="icon" href="icon-192.png" type="image/png" />
+  <style>
+    #offline-message {
+      display: none;
+      text-align: center;
+      padding: 1rem;
+      background: #fce9ec;
+      color: #b23b5b;
+      border-top: 2px solid #f8cdd6;
+      font-weight: bold;
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <h1>💖 Couple Wishlist Kita 💖</h1>
+      <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">🌙</button>
+    </div>
+    <p>Biar nggak bingung mau makan atau jalan ke mana 😋</p>
+  </header>
+
+  <div id="offline-message">🌤️ Oops, kamu sedang offline~ buka lagi setelah ada internet ya 💞</div>
+
+  <main>
+    <div class="tabs">
+      <button class="tab-button active" data-tab="makan">🍜 Tempat Makan</button>
+      <button class="tab-button" data-tab="wisata">🌄 Tempat Wisata</button>
+    </div>
+
+    <div class="controls">
+      <div class="search-wrap">
+        <input id="search-input" placeholder="Cari tempat..." />
+      </div>
+      <div class="progress-wrap" aria-hidden="false">
+        <div id="progress-text">0 / 0</div>
+        <div class="progress-bar"><div id="progress-fill"></div></div>
+      </div>
+    </div>
+
+    <!-- Input untuk Makan -->
+    <div class="input-area" data-tab="makan">
+      <input type="text" id="input-makan" placeholder="Tambah tempat makan baru..." />
+      <button id="add-makan">Tambah</button>
+    </div>
+    <section id="makan" class="tab-content active"></section>
+
+    <!-- Input untuk Wisata -->
+    <div class="input-area" data-tab="wisata" style="display:none;">
+      <input type="text" id="input-wisata" placeholder="Tambah tempat wisata baru..." />
+      <button id="add-wisata">Tambah</button>
+    </div>
+    <section id="wisata" class="tab-content"></section>
+  </main>
+
+  <footer>
+    <p>✨ Semoga satu-satu bisa tercoret sambil kumpulin kenangan lucu & perut kenyang bareng 😋💞</p>
+    <p class="version">💚 versi stabil 0.6.0 (tanpa auto-update) 💚</p>
+  </footer>
+
+  <div id="confetti-container" aria-hidden="true"></div>
+
+  <script type="module" src="app.js"></script>
+
+  <script>
+    // 🚫 Tidak pakai service worker lagi
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        for (let reg of registrations) {
+          reg.unregister();
+          console.log('🧹 Service Worker lama dihapus');
+        }
+      });
+    }
+
+    // 🌤️ Deteksi offline/online
+    const offlineMsg = document.getElementById('offline-message');
+    function updateOnlineStatus() {
+      offlineMsg.style.display = navigator.onLine ? 'none' : 'block';
+    }
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus();
+
+    // 🧭 Tab switching (makan/wisata)
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.tab-button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+          document.getElementById(btn.dataset.tab).classList.add('active');
+          document.querySelectorAll('.input-area').forEach(a => {
+            a.style.display = a.dataset.tab === btn.dataset.tab ? 'flex' : 'none';
+          });
+        });
+      });
+    });
+  </script>
+</body>
+</html>
